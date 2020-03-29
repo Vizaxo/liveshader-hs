@@ -97,8 +97,13 @@ renderFrame dt = do
   GL.currentProgram $= Just (program (rs ^. shaderProg))
   GL.bindVertexArrayObject $= Just (rs ^. vao)
 
-  (GL.Position mouseX mouseY) <- GL.get GLFW.mousePos
   safeSetUniform "iTime" (dt :: Float)
+
+  let (GL.Size width height) = rs^.windowSize
+  safeSetUniform "iResolution"
+    (GL.Vector2 (fromIntegral width) (fromIntegral height) :: GL.Vector2 Float)
+
+  (GL.Position mouseX mouseY) <- GL.get GLFW.mousePos
   safeSetUniform "iMousePos"
     (GL.Vector2 (fromIntegral mouseX) (fromIntegral mouseY) :: GL.Vector2 Float)
 
