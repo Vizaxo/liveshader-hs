@@ -9,6 +9,4 @@ main :: IO ()
 main = do
   makeWindow
   rs <- initOGL
-  runStateT renderFrame rs
-  readLn @Char
-  pure ()
+  void $ runStateT (forever renderFrame) rs

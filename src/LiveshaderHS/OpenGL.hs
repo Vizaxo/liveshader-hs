@@ -2,6 +2,7 @@ module LiveshaderHS.OpenGL where
 
 import Control.Lens
 import Control.Monad.State
+import Data.Time.Clock
 import Graphics.Rendering.OpenGL (($=))
 import qualified Graphics.Rendering.OpenGL as GL
 import qualified Graphics.UI.GLFW as GLFW
@@ -44,7 +45,8 @@ initOGL = do
       GL.vertexAttribPointer posAttribute $= (GL.ToFloat, pos)
 
   GL.currentProgram $= Just (program shaderProg)
-  pure (RenderState shaderProg vao)
+  t0 <- getCurrentTime
+  pure (RenderState shaderProg vao t0)
 
 
 vertices :: [GL.Vector2 Float]
@@ -62,11 +64,19 @@ makeShaderProgram = loadShaderProgram
   , (GL.FragmentShader, "shaders/fragment.glsl")
   ]
 
+elapsedTime :: (MonadState RenderState m, MonadIO m) => m Float
+elapsedTime = do
+  t0 <- gets (^. startTime)
+  t <- liftIO getCurrentTime
+  let dt = diffUTCTime t0 t
+  pure (realToFrac dt)
+
 renderFrame :: (MonadState RenderState m, MonadIO m) => m ()
 renderFrame = do
   renderState <- get
+  dt <- elapsedTime
 
-  liftIO GL.loadIdentity
+  liftIO $ setUniform (renderState ^. shaderProg) "iTime" (dt :: Float)
   GL.clearColor $= GL.Color4 0.0 0.0 0.0 0.0
   liftIO $ GL.clear [GL.ColorBuffer, GL.DepthBuffer]
 
