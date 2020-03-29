@@ -105,7 +105,7 @@ renderFrame dt = do
 
   (GL.Position mouseX mouseY) <- GL.get GLFW.mousePos
   safeSetUniform "iMousePos"
-    (GL.Vector2 (fromIntegral mouseX) (fromIntegral mouseY) :: GL.Vector2 Float)
+    (GL.Vector2 (fromIntegral mouseX) (fromIntegral (height - mouseY)) :: GL.Vector2 Float)
 
   GL.clearColor $= GL.Color4 0.0 0.0 0.0 0.0
   liftIO $ GL.clear [GL.ColorBuffer, GL.DepthBuffer]
