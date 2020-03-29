@@ -1,0 +1,25 @@
+name:                liveshader-hs
+version:             0.1.0.0
+license:             AGPL-3
+
+extra-source-files:
+- README.md
+
+dependencies:
+- base >= 4.7 && < 5
+- GLFW
+- OpenGL
+- OpenGLRaw
+- bytestring
+- containers
+- distributive
+- lens
+- mtl
+- text
+
+default-extensions:
+- TemplateHaskell
+- GeneralizedNewtypeDeriving
+
+library:
+  source-dirs: src
