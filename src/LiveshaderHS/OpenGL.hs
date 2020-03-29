@@ -112,6 +112,7 @@ renderFrame iTime t = do
   GL.bindVertexArrayObject $= Just (rs ^. vao)
 
   safeSetUniform "iTime" iTime
+  safeSetUniform "iDeltaTime" dt
 
   let (GL.Size width height) = rs^.windowSize
   safeSetUniform "iResolution"
