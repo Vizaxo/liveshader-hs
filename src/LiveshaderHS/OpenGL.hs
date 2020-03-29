@@ -25,9 +25,6 @@ makeWindow = do
   -- Disable vsync
   GLFW.swapInterval $= 0
 
-  GLFW.disableSpecial GLFW.MouseCursor
-  GLFW.mousePos $= (GL.Position 0 0)
-
 initOGL :: FilePath -> IO RenderState
 initOGL shaderDir = do
   GL.polygonMode $= (GL.Fill, GL.Fill)
@@ -99,7 +96,11 @@ renderFrame dt = do
   GL.currentProgram $= Just (program (rs ^. shaderProg))
   GL.bindVertexArrayObject $= Just (rs ^. vao)
 
+  (GL.Position mouseX mouseY) <- GL.get GLFW.mousePos
   safeSetUniform "iTime" (dt :: Float)
+  safeSetUniform "iMousePos"
+    (GL.Vector2 (fromIntegral mouseX) (fromIntegral mouseY) :: GL.Vector2 Float)
+
   GL.clearColor $= GL.Color4 0.0 0.0 0.0 0.0
   liftIO $ GL.clear [GL.ColorBuffer, GL.DepthBuffer]
   liftIO $ GL.drawArrays GL.Triangles 0 (fromIntegral (length vertices))
