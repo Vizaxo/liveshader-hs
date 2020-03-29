@@ -78,6 +78,18 @@ recompileIfDirty = do
         liftIO (print (e :: IOException))
         liftIO (putStrLn " Shader compilation failed")
 
+uniformExists :: GL.UniformLocation -> Bool
+uniformExists (GL.UniformLocation (-1)) = False
+uniformExists _ = True
+
+-- Set a uniform without giving a warning or error if it is not active
+safeSetUniform :: (GL.Uniform a, MonadState RenderState m, MonadIO m)
+  => String -> a -> m ()
+safeSetUniform name v = do
+  rs <- get
+  uLocation <- GL.get (GL.uniformLocation (rs^.shaderProg&program) name)
+  when (uniformExists uLocation) $ GL.uniform uLocation $= v
+
 renderFrame :: (MonadState RenderState m, MonadIO m) => Float -> m ()
 renderFrame dt = do
   recompileIfDirty
@@ -85,9 +97,9 @@ renderFrame dt = do
   rs <- get
 
   GL.currentProgram $= Just (program (rs ^. shaderProg))
-  liftIO $ setUniform (rs ^. shaderProg) "iTime" (dt :: Float)
   GL.bindVertexArrayObject $= Just (rs ^. vao)
 
+  safeSetUniform "iTime" (dt :: Float)
   GL.clearColor $= GL.Color4 0.0 0.0 0.0 0.0
   liftIO $ GL.clear [GL.ColorBuffer, GL.DepthBuffer]
   liftIO $ GL.drawArrays GL.Triangles 0 (fromIntegral (length vertices))
