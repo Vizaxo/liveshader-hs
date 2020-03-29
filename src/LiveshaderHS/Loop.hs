@@ -25,8 +25,8 @@ liveshader shaderDir = do
 
   t0 <- getCurrentTime
   void $ runSTMStateT s $ forever $ do
-    dt <- elapsedTime t0
-    renderFrame dt
+    (iTime, t) <- elapsedTime t0
+    renderFrame iTime t
 
 updateWindowSize :: TVar RenderState -> GL.Size -> IO ()
 updateWindowSize s size = do
@@ -37,11 +37,11 @@ updateWindowSize s size = do
 
 
 
-elapsedTime :: MonadIO m => UTCTime -> m Float
+elapsedTime :: MonadIO m => UTCTime -> m (Float, UTCTime)
 elapsedTime t0 = do
   t <- liftIO getCurrentTime
-  let dt = diffUTCTime t0 t
-  pure (realToFrac dt)
+  let iTime = diffUTCTime t t0
+  pure (realToFrac iTime, t)
 
 setDirty :: TVar RenderState -> IO ()
 setDirty s = atomically $ do

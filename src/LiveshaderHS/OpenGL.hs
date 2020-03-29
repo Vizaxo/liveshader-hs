@@ -4,6 +4,7 @@ import Control.Exception
 import Control.Lens
 import Control.Monad
 import Control.Monad.Trans
+import Data.Time.Clock
 import Foreign.Storable
 import Graphics.GLUtil
 import Graphics.Rendering.OpenGL (($=))
@@ -51,7 +52,8 @@ initOGL shaderDir = do
       GL.vertexAttribArray posAttribute $= GL.Enabled
       GL.vertexAttribPointer posAttribute $= (GL.ToFloat, pos)
 
-  pure (RenderState shaderProg vao False shaderDir windowSize)
+  currentTime <- getCurrentTime
+  pure (RenderState shaderProg vao False shaderDir windowSize currentTime)
 
 
 vertices :: [GL.Vector2 Float]
@@ -73,7 +75,7 @@ recompileIfDirty :: (MonadState RenderState m, MonadIO m) => m ()
 recompileIfDirty = do
   rs <- get
   when (rs ^. dirty) $ do
-    liftIO (putStr "Recompiling shaders...")
+    liftIO (putStr "\nRecompiling shaders...")
     liftIO (try (makeShaderProgram (rs ^. shaderDir))) >>= \case
       Right sp -> do
         modify (set shaderProg sp . set dirty False)
@@ -95,20 +97,26 @@ safeSetUniform name v = do
   uLocation <- GL.get (GL.uniformLocation (rs^.shaderProg&program) name)
   when (uniformExists uLocation) $ GL.uniform uLocation $= v
 
-renderFrame :: (MonadState RenderState m, MonadIO m) => Float -> m ()
-renderFrame dt = do
+renderFrame :: (MonadState RenderState m, MonadIO m) => Float -> UTCTime -> m ()
+renderFrame iTime t = do
   recompileIfDirty
 
   rs <- get
+  let tPrev = rs^.lastRenderTime
+      dt = realToFrac (diffUTCTime t tPrev) :: Float
+      fps = 1.0 / dt
+  liftIO (putStr ("FPS: " ++ show fps ++ "\t"))
+  modify (set lastRenderTime t)
 
   GL.currentProgram $= Just (program (rs ^. shaderProg))
   GL.bindVertexArrayObject $= Just (rs ^. vao)
 
-  safeSetUniform "iTime" (dt :: Float)
+  safeSetUniform "iTime" iTime
 
   let (GL.Size width height) = rs^.windowSize
   safeSetUniform "iResolution"
     (GL.Vector2 (fromIntegral width) (fromIntegral height) :: GL.Vector2 Float)
+  liftIO (putStr ("Window size: " ++ show width ++ "*" ++ show height ++ "\r"))
 
   (GL.Position mouseX mouseY) <- GL.get GLFW.mousePos
   safeSetUniform "iMousePos"

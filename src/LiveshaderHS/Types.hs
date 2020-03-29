@@ -1,6 +1,7 @@
 module LiveshaderHS.Types where
 
 import Control.Lens
+import Data.Time.Clock
 import qualified Graphics.Rendering.OpenGL as GL
 import Graphics.GLUtil
 
@@ -10,5 +11,6 @@ data RenderState = RenderState
   , _dirty :: Bool
   , _shaderDir :: FilePath
   , _windowSize :: GL.Size
+  , _lastRenderTime :: UTCTime
   }
 makeLenses ''RenderState
