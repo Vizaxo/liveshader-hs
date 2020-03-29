@@ -15,11 +15,17 @@ dependencies:
 - lens
 - mtl
 - time
+- fsnotify
+- stm
 
 default-extensions:
 - TemplateHaskell
 - GeneralizedNewtypeDeriving
 - FlexibleContexts
+- RankNTypes
+- FlexibleInstances
+- MultiParamTypeClasses
+- LambdaCase
 
 library:
   source-dirs: src

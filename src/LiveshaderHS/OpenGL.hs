@@ -1,13 +1,16 @@
 module LiveshaderHS.OpenGL where
 
+import Control.Exception
 import Control.Lens
-import Control.Monad.State
+import Control.Monad
+import Control.Monad.Trans
 import Graphics.Rendering.OpenGL (($=))
 import qualified Graphics.Rendering.OpenGL as GL
 import qualified Graphics.UI.GLFW as GLFW
 import Graphics.GLUtil
 import Foreign.Storable
 
+import LiveshaderHS.STMState
 import LiveshaderHS.Types
 
 makeWindow :: IO ()
@@ -25,8 +28,8 @@ makeWindow = do
   GLFW.disableSpecial GLFW.MouseCursor
   GLFW.mousePos $= (GL.Position 0 0)
 
-initOGL :: IO RenderState
-initOGL = do
+initOGL :: FilePath -> IO RenderState
+initOGL shaderDir = do
   GL.polygonMode $= (GL.Fill, GL.Fill)
   GL.cullFace $= Nothing
   GL.depthFunc $= Just GL.Less
@@ -34,7 +37,7 @@ initOGL = do
   vao <- GL.genObjectName
   GL.bindVertexArrayObject $= Just vao
 
-  shaderProg <- makeShaderProgram
+  shaderProg <- makeShaderProgram shaderDir
 
   vao <- makeVAO $ do
       let pos = GL.VertexArrayDescriptor 2 GL.Float (fromIntegral $ sizeOf (undefined :: GL.Vector2 Float)) offset0
@@ -43,8 +46,7 @@ initOGL = do
       GL.vertexAttribArray posAttribute $= GL.Enabled
       GL.vertexAttribPointer posAttribute $= (GL.ToFloat, pos)
 
-  GL.currentProgram $= Just (program shaderProg)
-  pure (RenderState shaderProg vao)
+  pure (RenderState shaderProg vao False shaderDir)
 
 
 vertices :: [GL.Vector2 Float]
@@ -56,21 +58,37 @@ vertices = [ GL.Vector2 (-1.0) (-1.0)
            , GL.Vector2 (-1.0) (-1.0)
            ]
 
-makeShaderProgram :: IO ShaderProgram
-makeShaderProgram = loadShaderProgram
-  [ (GL.VertexShader, "shaders/vertex.glsl")
-  , (GL.FragmentShader, "shaders/fragment.glsl")
+makeShaderProgram :: FilePath -> IO ShaderProgram
+makeShaderProgram shaderDir = loadShaderProgram
+  [ (GL.VertexShader, shaderDir ++ "/vertex.glsl")
+  , (GL.FragmentShader, shaderDir ++ "/fragment.glsl")
   ]
+
+recompileIfDirty :: (MonadState RenderState m, MonadIO m) => m ()
+recompileIfDirty = do
+  rs <- get
+  when (rs ^. dirty) $ do
+    liftIO (putStr "Recompiling shaders...")
+    liftIO (try (makeShaderProgram (rs ^. shaderDir))) >>= \case
+      Right sp -> do
+        modify (set shaderProg sp . set dirty False)
+        liftIO (putStrLn " Recompiled")
+      Left e -> do
+        modify (set dirty False)
+        liftIO (print (e :: IOException))
+        liftIO (putStrLn " Shader compilation failed")
 
 renderFrame :: (MonadState RenderState m, MonadIO m) => Float -> m ()
 renderFrame dt = do
-  renderState <- get
+  recompileIfDirty
 
-  liftIO $ setUniform (renderState ^. shaderProg) "iTime" (dt :: Float)
+  rs <- get
+
+  GL.currentProgram $= Just (program (rs ^. shaderProg))
+  liftIO $ setUniform (rs ^. shaderProg) "iTime" (dt :: Float)
+  GL.bindVertexArrayObject $= Just (rs ^. vao)
+
   GL.clearColor $= GL.Color4 0.0 0.0 0.0 0.0
   liftIO $ GL.clear [GL.ColorBuffer, GL.DepthBuffer]
-
-  GL.bindVertexArrayObject $= Just (renderState ^. vao)
-
   liftIO $ GL.drawArrays GL.Triangles 0 (fromIntegral (length vertices))
   liftIO $ GLFW.swapBuffers
