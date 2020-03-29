@@ -11,6 +11,20 @@ packages:
       sha256: 807b326716828a975ee2783c3911687f47ca4c4ff3b458c2578fa71dd884be8e
   original:
     hackage: GLFW-0.5.2.5@sha256:fa54e997076a6b415c43100830e9b6ab6827c8766aef80e66d598de9b2400b93
+- completed:
+    hackage: GLUtil-0.10.3@sha256:6b3eb89a15f0363647bc4112e007868440b1555e11bf3219e0e1ea884416e5e1,2523
+    pantry-tree:
+      size: 1618
+      sha256: 2d4bf556e63330bba69e03323a7503dee11f26af48f1236cd817d8b7b1b78d64
+  original:
+    hackage: GLUtil-0.10.3@sha256:6b3eb89a15f0363647bc4112e007868440b1555e11bf3219e0e1ea884416e5e1,2523
+- completed:
+    hackage: hpp-0.6.2@sha256:aa75b0471c0a8f68ccf823da37ea88b4187829972dc951651805a3722293a001,1969
+    pantry-tree:
+      size: 1357
+      sha256: c85fba4149618ab38a1eb2d369d46d78a58a2729cfcf9be93ff36936e6b9ffe5
+  original:
+    hackage: hpp-0.6.2@sha256:aa75b0471c0a8f68ccf823da37ea88b4187829972dc951651805a3722293a001,1969
 snapshots:
 - completed:
     size: 498155
