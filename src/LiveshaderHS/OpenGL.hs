@@ -35,6 +35,7 @@ initOGL shaderDir = do
   GL.bindVertexArrayObject $= Just vao
 
   shaderProg <- makeShaderProgram shaderDir
+  windowSize <- GL.get GLFW.windowSize
 
   vao <- makeVAO $ do
       let pos = GL.VertexArrayDescriptor 2 GL.Float (fromIntegral $ sizeOf (undefined :: GL.Vector2 Float)) offset0
@@ -43,7 +44,7 @@ initOGL shaderDir = do
       GL.vertexAttribArray posAttribute $= GL.Enabled
       GL.vertexAttribPointer posAttribute $= (GL.ToFloat, pos)
 
-  pure (RenderState shaderProg vao False shaderDir)
+  pure (RenderState shaderProg vao False shaderDir windowSize)
 
 
 vertices :: [GL.Vector2 Float]

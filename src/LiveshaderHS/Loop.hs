@@ -5,6 +5,9 @@ import Control.Lens
 import Control.Monad
 import Control.Monad.Trans
 import Data.Time.Clock
+import Graphics.Rendering.OpenGL (($=))
+import qualified Graphics.Rendering.OpenGL as GL
+import qualified Graphics.UI.GLFW as GLFW
 import System.FSNotify
 
 import LiveshaderHS.OpenGL
@@ -18,11 +21,21 @@ liveshader shaderDir = do
 
   s <- newTVarIO rs
   recompileOnChange s shaderDir
+  GLFW.windowSizeCallback $= updateWindowSize s
 
   t0 <- getCurrentTime
   void $ runSTMStateT s $ forever $ do
     dt <- elapsedTime t0
     renderFrame dt
+
+updateWindowSize :: TVar RenderState -> GL.Size -> IO ()
+updateWindowSize s size = do
+  GL.viewport $= ((GL.Position 0 0), size)
+  atomically $ do
+    rs <- readTVar s
+    writeTVar s (set windowSize size rs)
+
+
 
 elapsedTime :: MonadIO m => UTCTime -> m Float
 elapsedTime t0 = do

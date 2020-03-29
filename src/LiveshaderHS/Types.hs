@@ -9,5 +9,6 @@ data RenderState = RenderState
   , _vao :: GL.VertexArrayObject
   , _dirty :: Bool
   , _shaderDir :: FilePath
+  , _windowSize :: GL.Size
   }
 makeLenses ''RenderState
