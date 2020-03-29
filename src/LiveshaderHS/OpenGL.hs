@@ -4,11 +4,12 @@ import Control.Exception
 import Control.Lens
 import Control.Monad
 import Control.Monad.Trans
+import Foreign.Storable
+import Graphics.GLUtil
 import Graphics.Rendering.OpenGL (($=))
+import System.Exit
 import qualified Graphics.Rendering.OpenGL as GL
 import qualified Graphics.UI.GLFW as GLFW
-import Graphics.GLUtil
-import Foreign.Storable
 
 import LiveshaderHS.STMState
 import LiveshaderHS.Types
@@ -21,9 +22,15 @@ makeWindow = do
   GLFW.openWindowHint GLFW.OpenGLProfile GLFW.OpenGLCoreProfile
   GLFW.openWindow (GL.Size 400 600) [] GLFW.Window
   GLFW.windowTitle $= "Liveshader HS"
+  GLFW.windowCloseCallback $= exitSuccess
+  GLFW.keyCallback $= keyCallback
 
   -- Disable vsync
   GLFW.swapInterval $= 0
+
+keyCallback :: GLFW.Key -> GLFW.KeyButtonState -> IO ()
+keyCallback (GLFW.SpecialKey GLFW.ESC) GLFW.Press = exitSuccess
+keyCallback _ _ = pure ()
 
 initOGL :: FilePath -> IO RenderState
 initOGL shaderDir = do
