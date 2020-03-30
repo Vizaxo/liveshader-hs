@@ -52,8 +52,12 @@ initOGL shaderDir = do
       GL.vertexAttribArray posAttribute $= GL.Enabled
       GL.vertexAttribPointer posAttribute $= (GL.ToFloat, pos)
 
+  texture <- readTexture (shaderDir ++ "/image.png") >>= \case
+    Left e -> error $ "Failed to load texture: " ++ e
+    Right t -> pure t
+
   currentTime <- getCurrentTime
-  pure (RenderState shaderProg vao False shaderDir windowSize currentTime)
+  pure (RenderState shaderProg vao False shaderDir windowSize currentTime texture)
 
 
 vertices :: [GL.Vector2 Float]
@@ -97,20 +101,15 @@ safeSetUniform name v = do
   uLocation <- GL.get (GL.uniformLocation (rs^.shaderProg&program) name)
   when (uniformExists uLocation) $ GL.uniform uLocation $= v
 
--- TODO: don't load the image in every frame
--- TODO: fix memory leak
 loadImageTexture :: (MonadGet RenderState m, MonadIO m)
-  => FilePath -> String -> GL.TextureUnit -> m ()
-loadImageTexture img uniformName textureUnit =
-  liftIO (readTexture img) >>= \case
-    Left e -> liftIO $ putStrLn $
-      "Failed to load texture " ++ uniformName ++ ": " ++ e
-    Right texture -> do
-      GL.activeTexture $= textureUnit
-      GL.textureBinding GL.Texture2D $= Just texture
-      GL.textureFilter GL.Texture2D $= ((GL.Nearest, Nothing), GL.Nearest)
-      texture2DWrap $= (GL.Repeated, GL.Repeat)
-      safeSetUniform uniformName textureUnit
+  => String -> GL.TextureUnit -> m ()
+loadImageTexture uniformName textureUnit = do
+  t <- (^. texture) <$> get
+  GL.activeTexture $= textureUnit
+  GL.textureBinding GL.Texture2D $= Just t
+  GL.textureFilter GL.Texture2D $= ((GL.Nearest, Nothing), GL.Nearest)
+  texture2DWrap $= (GL.Repeated, GL.Repeat)
+  safeSetUniform uniformName textureUnit
 
 renderFrame :: (MonadState RenderState m, MonadIO m) => Float -> UTCTime -> m ()
 renderFrame iTime t = do
@@ -138,7 +137,7 @@ renderFrame iTime t = do
   safeSetUniform "iMousePos"
     (GL.Vector2 (fromIntegral mouseX) (fromIntegral (height - mouseY)) :: GL.Vector2 Float)
 
-  loadImageTexture "resources/image.png" "texture0" (GL.TextureUnit 0)
+  loadImageTexture "texture0" (GL.TextureUnit 0)
 
   GL.clearColor $= GL.Color4 0.0 0.0 0.0 0.0
   liftIO $ GL.clear [GL.ColorBuffer, GL.DepthBuffer]
