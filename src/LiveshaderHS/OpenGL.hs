@@ -90,12 +90,27 @@ uniformExists (GL.UniformLocation (-1)) = False
 uniformExists _ = True
 
 -- Set a uniform without giving a warning or error if it is not active
-safeSetUniform :: (GL.Uniform a, MonadState RenderState m, MonadIO m)
+safeSetUniform :: (GL.Uniform a, MonadGet RenderState m, MonadIO m)
   => String -> a -> m ()
 safeSetUniform name v = do
   rs <- get
   uLocation <- GL.get (GL.uniformLocation (rs^.shaderProg&program) name)
   when (uniformExists uLocation) $ GL.uniform uLocation $= v
+
+-- TODO: don't load the image in every frame
+-- TODO: fix memory leak
+loadImageTexture :: (MonadGet RenderState m, MonadIO m)
+  => FilePath -> String -> GL.TextureUnit -> m ()
+loadImageTexture img uniformName textureUnit =
+  liftIO (readTexture img) >>= \case
+    Left e -> liftIO $ putStrLn $
+      "Failed to load texture " ++ uniformName ++ ": " ++ e
+    Right texture -> do
+      GL.activeTexture $= textureUnit
+      GL.textureBinding GL.Texture2D $= Just texture
+      GL.textureFilter GL.Texture2D $= ((GL.Nearest, Nothing), GL.Nearest)
+      texture2DWrap $= (GL.Repeated, GL.Repeat)
+      safeSetUniform uniformName textureUnit
 
 renderFrame :: (MonadState RenderState m, MonadIO m) => Float -> UTCTime -> m ()
 renderFrame iTime t = do
@@ -122,6 +137,8 @@ renderFrame iTime t = do
   (GL.Position mouseX mouseY) <- GL.get GLFW.mousePos
   safeSetUniform "iMousePos"
     (GL.Vector2 (fromIntegral mouseX) (fromIntegral (height - mouseY)) :: GL.Vector2 Float)
+
+  loadImageTexture "resources/image.png" "texture0" (GL.TextureUnit 0)
 
   GL.clearColor $= GL.Color4 0.0 0.0 0.0 0.0
   liftIO $ GL.clear [GL.ColorBuffer, GL.DepthBuffer]
