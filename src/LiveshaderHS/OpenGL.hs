@@ -35,15 +35,20 @@ keyCallback _ _ = pure ()
 
 initOGL :: FilePath -> IO RenderState
 initOGL shaderDir = do
+  GL.debugOutput $= GL.Enabled
   GL.polygonMode $= (GL.Fill, GL.Fill)
   GL.cullFace $= Nothing
   GL.depthFunc $= Just GL.Less
 
   vao <- GL.genObjectName
   GL.bindVertexArrayObject $= Just vao
+  GL.clampColor GL.ClampVertexColor $= GL.ClampOff
+  GL.clampColor GL.ClampFragmentColor $= GL.ClampOff
+  GL.clampColor GL.ClampReadColor $= GL.ClampOff
+  GL.clearColor $= GL.Color4 0.0 0.0 0.0 0.0
 
   shaderProg <- makeShaderProgram shaderDir
-  windowSize <- GL.get GLFW.windowSize
+  windowSize@(GL.Size width height) <- GL.get GLFW.windowSize
 
   vao <- makeVAO $ do
       let pos = GL.VertexArrayDescriptor 2 GL.Float (fromIntegral $ sizeOf (undefined :: GL.Vector2 Float)) offset0
@@ -56,8 +61,20 @@ initOGL shaderDir = do
     Left e -> error $ "Failed to load texture: " ++ e
     Right t -> pure t
 
+  buffer0 <- liftIO $ freshTextureFloat (fromIntegral width) (fromIntegral height) TexRGBA
+  fbo <- GL.genObjectName
+
+  -- Clear buffer0 texture
+  GL.bindFramebuffer GL.Framebuffer $= fbo
+  GL.activeTexture $= GL.TextureUnit 1
+  GL.textureBinding GL.Texture2D $= Just buffer0
+  GL.textureFilter GL.Texture2D $= ((GL.Nearest, Nothing), GL.Nearest)
+  texture2DWrap $= (GL.Repeated, GL.Repeat)
+  liftIO $ GL.framebufferTexture2D GL.Framebuffer (GL.ColorAttachment 0) GL.Texture2D buffer0 0
+  liftIO $ GL.clear [GL.ColorBuffer]
+
   currentTime <- getCurrentTime
-  pure (RenderState shaderProg vao False shaderDir windowSize currentTime texture)
+  pure (RenderState shaderProg vao False shaderDir windowSize currentTime texture buffer0 fbo)
 
 
 vertices :: [GL.Vector2 Float]
@@ -101,18 +118,21 @@ safeSetUniform name v = do
   uLocation <- GL.get (GL.uniformLocation (rs^.shaderProg&program) name)
   when (uniformExists uLocation) $ GL.uniform uLocation $= v
 
-loadImageTexture :: (MonadGet RenderState m, MonadIO m)
-  => String -> GL.TextureUnit -> m ()
-loadImageTexture uniformName textureUnit = do
-  t <- (^. texture) <$> get
+bindTexture :: (MonadGet RenderState m, MonadIO m)
+  => GL.TextureObject -> String -> GL.TextureUnit -> m ()
+bindTexture texture uniformName textureUnit = do
   GL.activeTexture $= textureUnit
-  GL.textureBinding GL.Texture2D $= Just t
+  GL.textureBinding GL.Texture2D $= Just texture
   GL.textureFilter GL.Texture2D $= ((GL.Nearest, Nothing), GL.Nearest)
   texture2DWrap $= (GL.Repeated, GL.Repeat)
   safeSetUniform uniformName textureUnit
 
 renderFrame :: (MonadState RenderState m, MonadIO m) => Float -> UTCTime -> m ()
 renderFrame iTime t = do
+  GL.get GL.errors >>= \case
+    [] -> pure ()
+    es -> liftIO $ print es
+
   recompileIfDirty
 
   rs <- get
@@ -125,21 +145,28 @@ renderFrame iTime t = do
   GL.currentProgram $= Just (program (rs ^. shaderProg))
   GL.bindVertexArrayObject $= Just (rs ^. vao)
 
+  -- Set uniforms
   safeSetUniform "iTime" iTime
   safeSetUniform "iDeltaTime" dt
-
   let (GL.Size width height) = rs^.windowSize
   safeSetUniform "iResolution"
     (GL.Vector2 (fromIntegral width) (fromIntegral height) :: GL.Vector2 Float)
   liftIO (putStr ("Window size: " ++ show width ++ "*" ++ show height ++ "\r"))
-
   (GL.Position mouseX mouseY) <- GL.get GLFW.mousePos
   safeSetUniform "iMousePos"
     (GL.Vector2 (fromIntegral mouseX) (fromIntegral (height - mouseY)) :: GL.Vector2 Float)
 
-  loadImageTexture "texture0" (GL.TextureUnit 0)
+  bindTexture (rs^.texture0) "texture0" (GL.TextureUnit 0)
+  bindTexture (rs^.buffer0) "buffer0" (GL.TextureUnit 1)
 
-  GL.clearColor $= GL.Color4 0.0 0.0 0.0 0.0
+  -- Render to buffer 0
+  GL.bindFramebuffer GL.Framebuffer $= (rs^.buffer0fbo)
+  safeSetUniform "isBuffer" (0 :: Float)
+  liftIO $ GL.drawArrays GL.Triangles 0 (fromIntegral (length vertices))
+
+  -- Render to screen
+  GL.bindFramebuffer GL.Framebuffer $= GL.defaultFramebufferObject
+  safeSetUniform "isBuffer" (1 :: Float)
   liftIO $ GL.clear [GL.ColorBuffer, GL.DepthBuffer]
   liftIO $ GL.drawArrays GL.Triangles 0 (fromIntegral (length vertices))
   liftIO $ GLFW.swapBuffers

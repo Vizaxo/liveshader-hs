@@ -12,6 +12,8 @@ data RenderState = RenderState
   , _shaderDir :: FilePath
   , _windowSize :: GL.Size
   , _lastRenderTime :: UTCTime
-  , _texture :: GL.TextureObject
+  , _texture0 :: GL.TextureObject
+  , _buffer0 :: GL.TextureObject
+  , _buffer0fbo :: GL.FramebufferObject
   }
 makeLenses ''RenderState
