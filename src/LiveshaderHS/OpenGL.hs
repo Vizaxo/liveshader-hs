@@ -76,22 +76,23 @@ initRenderState shaderDir = do
 
   buffer0 <- liftIO $ freshTextureFloat
     (fromIntegral width) (fromIntegral height) TexRGBA
-  fbo <- GL.genObjectName
+  buffer0fbo <- GL.genObjectName
 
   currentTime <- liftIO getCurrentTime
   pure (RenderState shaderProg vao False shaderDir
-        windowSize currentTime texture0 buffer0 fbo)
+        windowSize currentTime texture0
+        (RenderBuffer buffer0 buffer0fbo))
 
 clearBuffer0 :: (MonadGet RenderState m, MonadIO m) => m ()
 clearBuffer0 = do
   rs <- get
-  GL.bindFramebuffer GL.Framebuffer $= (rs^.buffer0fbo)
+  GL.bindFramebuffer GL.Framebuffer $= (rs^.buffer0.fbo)
   GL.activeTexture $= GL.TextureUnit 1
-  GL.textureBinding GL.Texture2D $= Just (rs^.buffer0)
+  GL.textureBinding GL.Texture2D $= Just (rs^.buffer0.texture)
   GL.textureFilter GL.Texture2D $= ((GL.Nearest, Nothing), GL.Nearest)
   texture2DWrap $= (GL.Repeated, GL.Repeat)
   liftIO $ GL.framebufferTexture2D GL.Framebuffer
-    (GL.ColorAttachment 0) GL.Texture2D (rs^.buffer0) 0
+    (GL.ColorAttachment 0) GL.Texture2D (rs^.buffer0.texture) 0
   liftIO $ GL.clear [GL.ColorBuffer]
 
 makeShaderProgram :: FilePath -> IO ShaderProgram
@@ -141,6 +142,20 @@ bindTexture texture uniformName textureUnit = do
   texture2DWrap $= (GL.Repeated, GL.Repeat)
   safeSetUniform uniformName textureUnit
 
+renderToBuffer :: (MonadGet RenderState m, MonadIO m) => RenderBuffer -> Float -> m ()
+renderToBuffer b id = do
+  GL.bindFramebuffer GL.Framebuffer $= (b^.fbo)
+  safeSetUniform "isBuffer" id
+  liftIO $ GL.drawArrays GL.Triangles 0 (fromIntegral (length screenRect))
+
+renderToScreen :: (MonadGet RenderState m, MonadIO m) => Float -> m ()
+renderToScreen id = do
+  GL.bindFramebuffer GL.Framebuffer $= GL.defaultFramebufferObject
+  safeSetUniform "isBuffer" (1 :: Float)
+  liftIO $ GL.clear [GL.ColorBuffer, GL.DepthBuffer]
+  liftIO $ GL.drawArrays GL.Triangles 0 (fromIntegral (length screenRect))
+  liftIO $ GLFW.swapBuffers
+
 renderFrame :: (MonadState RenderState m, MonadIO m) => Float -> UTCTime -> m ()
 renderFrame iTime t = do
   GL.get GL.errors >>= \case
@@ -165,19 +180,10 @@ renderFrame iTime t = do
   safeSetUniform "iMousePos" (GL.Vector2 @Float (fromIntegral mouseX)
                               (fromIntegral (height - mouseY)))
   bindTexture (rs^.texture0) "texture0" (GL.TextureUnit 0)
-  bindTexture (rs^.buffer0) "buffer0" (GL.TextureUnit 1)
+  bindTexture (rs^.buffer0.texture) "buffer0" (GL.TextureUnit 1)
 
-  -- Render to buffer 0
-  GL.bindFramebuffer GL.Framebuffer $= (rs^.buffer0fbo)
-  safeSetUniform "isBuffer" (0 :: Float)
-  liftIO $ GL.drawArrays GL.Triangles 0 (fromIntegral (length screenRect))
-
-  -- Render to screen
-  GL.bindFramebuffer GL.Framebuffer $= GL.defaultFramebufferObject
-  safeSetUniform "isBuffer" (1 :: Float)
-  liftIO $ GL.clear [GL.ColorBuffer, GL.DepthBuffer]
-  liftIO $ GL.drawArrays GL.Triangles 0 (fromIntegral (length screenRect))
-  liftIO $ GLFW.swapBuffers
+  renderToBuffer (rs^.buffer0) 0
+  renderToScreen (-1)
 
   liftIO $ putStr $ "FPS: " ++ show fps ++ "\t"
     ++ "Window size: " ++ show width ++ "*" ++ show height ++ "\r"

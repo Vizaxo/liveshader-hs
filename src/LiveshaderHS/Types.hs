@@ -5,6 +5,12 @@ import Data.Time.Clock
 import qualified Graphics.Rendering.OpenGL as GL
 import Graphics.GLUtil
 
+data RenderBuffer = RenderBuffer
+  { _texture :: GL.TextureObject
+  , _fbo :: GL.FramebufferObject
+  }
+makeLenses ''RenderBuffer
+
 data RenderState = RenderState
   { _shaderProg :: ShaderProgram
   , _vao :: GL.VertexArrayObject
@@ -13,7 +19,6 @@ data RenderState = RenderState
   , _windowSize :: GL.Size
   , _lastRenderTime :: UTCTime
   , _texture0 :: GL.TextureObject
-  , _buffer0 :: GL.TextureObject
-  , _buffer0fbo :: GL.FramebufferObject
+  , _buffer0 :: RenderBuffer
   }
 makeLenses ''RenderState
