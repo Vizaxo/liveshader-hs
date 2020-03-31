@@ -59,7 +59,7 @@ initRenderState shaderDir = do
     Just sp -> pure sp
     Nothing -> error "Shader compilation failed"
 
-  windowSize@(GL.Size width height) <- GL.get GLFW.windowSize
+  windowSize <- GL.get GLFW.windowSize
 
   vao <- liftIO $ makeVAO $ do
       let pos = GL.VertexArrayDescriptor 2 GL.Float
@@ -74,14 +74,21 @@ initRenderState shaderDir = do
     Left e -> error $ "Failed to load texture: " ++ e
     Right t -> pure t
 
-  buffer0 <- liftIO $ freshTextureFloat
-    (fromIntegral width) (fromIntegral height) TexRGBA
-  buffer0fbo <- GL.genObjectName
+  buffer0 <- genRenderBuffer windowSize
+  buffer1 <- genRenderBuffer windowSize
 
   currentTime <- liftIO getCurrentTime
   pure (RenderState shaderProg vao False shaderDir
         windowSize currentTime texture0
-        [RenderBuffer buffer0 buffer0fbo])
+        [buffer0, buffer1])
+
+genRenderBuffer :: MonadIO m => GL.Size -> m RenderBuffer
+genRenderBuffer (GL.Size width height) = do
+  texture <- liftIO $ freshTextureFloat
+    (fromIntegral width) (fromIntegral height) TexRGBA
+  fbo <- GL.genObjectName
+  pure (RenderBuffer texture fbo)
+
 
 clearBuffer :: MonadIO m => RenderBuffer -> m ()
 clearBuffer b = do
@@ -104,8 +111,9 @@ recompileIfDirty :: (MonadState RenderState m, MonadIO m) => m ()
 recompileIfDirty = do
   rs <- get
   when (rs^.dirty) $ do
-    (compileShaders (rs^.shaderDir))
-    modify (set dirty False)
+    compileShaders (rs^.shaderDir) >>= \case
+      Nothing -> modify (set dirty False)
+      Just sp -> modify (set dirty False . set shaderProg sp)
 
 compileShaders :: MonadIO m => FilePath -> m (Maybe ShaderProgram)
 compileShaders shaderDir = do
@@ -118,7 +126,6 @@ compileShaders shaderDir = do
       liftIO (print (e :: IOException))
       liftIO (putStrLn " Shader compilation failed")
       pure Nothing
-
 
 uniformExists :: GL.UniformLocation -> Bool
 uniformExists (GL.UniformLocation (-1)) = False
@@ -144,13 +151,13 @@ bindTexture texture uniformName textureUnit = do
 renderToBuffer :: (MonadGet RenderState m, MonadIO m) => RenderBuffer -> Integer -> m ()
 renderToBuffer b id = do
   GL.bindFramebuffer GL.Framebuffer $= (b^.fbo)
-  safeSetUniform "isBuffer" (fromInteger id :: Float)
+  safeSetUniform "bufferId" (fromInteger id :: GL.GLint)
   liftIO $ GL.drawArrays GL.Triangles 0 (fromIntegral (length screenRect))
 
 renderToScreen :: (MonadGet RenderState m, MonadIO m) => Float -> m ()
 renderToScreen id = do
   GL.bindFramebuffer GL.Framebuffer $= GL.defaultFramebufferObject
-  safeSetUniform "isBuffer" (1 :: Float)
+  safeSetUniform "bufferId" ((-1) :: GL.GLint)
   liftIO $ GL.clear [GL.ColorBuffer, GL.DepthBuffer]
   liftIO $ GL.drawArrays GL.Triangles 0 (fromIntegral (length screenRect))
   liftIO $ GLFW.swapBuffers
@@ -180,12 +187,12 @@ renderFrame iTime t = do
                               (fromIntegral (height - mouseY)))
   bindTexture (rs^.texture0) "texture0" (GL.TextureUnit 0)
 
-  let numberedBuffers = zip (rs^.buffers) [1..]
+  let numberedBuffers = zip (rs^.buffers) [0..]
   forM_ numberedBuffers $ \(b, id) -> do
     bindTexture (b^.texture) ("buffer" ++ show id) (GL.TextureUnit (1+fromInteger id))
 
   mapM_ (uncurry renderToBuffer) numberedBuffers
   renderToScreen (-1)
 
-  liftIO $ putStr $ "FPS: " ++ show fps ++ "\t"
+  liftIO $ putStr $ "FPS: " ++ show fps ++ "fps \t"
     ++ "Window size: " ++ show width ++ "*" ++ show height ++ "\r"
