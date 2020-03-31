@@ -14,19 +14,22 @@ import LiveshaderHS.OpenGL
 import LiveshaderHS.STMState
 import LiveshaderHS.Types
 
-liveshader :: FilePath -> IO ()
+liveshader :: MonadIO m => FilePath -> m ()
 liveshader shaderDir = do
   makeWindow
-  rs <- initOGL shaderDir
+  initOGL
+  rs <- initRenderState shaderDir
 
-  s <- newTVarIO rs
+  s <- liftIO (newTVarIO rs)
   recompileOnChange s shaderDir
   GLFW.windowSizeCallback $= updateWindowSize s
 
-  t0 <- getCurrentTime
-  void $ runSTMStateT s $ forever $ do
-    (iTime, t) <- elapsedTime t0
-    renderFrame iTime t
+  t0 <- liftIO (getCurrentTime)
+  void $ runSTMStateT s $ do
+    clearBuffer0
+    forever $ do
+      (iTime, t) <- elapsedTime t0
+      renderFrame iTime t
 
 updateWindowSize :: TVar RenderState -> GL.Size -> IO ()
 updateWindowSize s size = do
@@ -43,12 +46,12 @@ elapsedTime t0 = do
   let iTime = diffUTCTime t t0
   pure (realToFrac iTime, t)
 
-setDirty :: TVar RenderState -> IO ()
-setDirty s = atomically $ do
+setDirty :: MonadIO m => TVar RenderState -> m ()
+setDirty s = liftIO $ atomically $ do
   rs <- readTVar s
   writeTVar s (set dirty True rs)
 
-recompileOnChange :: TVar RenderState -> FilePath -> IO ()
-recompileOnChange s shaderDir = do
+recompileOnChange :: MonadIO m => TVar RenderState -> FilePath -> m ()
+recompileOnChange s shaderDir = liftIO $ do
   mgr <- startManager
   void $ watchDir mgr shaderDir (const True) (const (setDirty s))

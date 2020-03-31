@@ -15,8 +15,17 @@ import qualified Graphics.UI.GLFW as GLFW
 import LiveshaderHS.STMState
 import LiveshaderHS.Types
 
-makeWindow :: IO ()
-makeWindow = do
+screenRect :: [GL.Vector2 Float]
+screenRect = [ GL.Vector2 (-1.0) (-1.0)
+           , GL.Vector2 1.0 (-1.0)
+           , GL.Vector2 1.0 1.0
+           , GL.Vector2 1.0 1.0
+           , GL.Vector2 (-1.0) 1.0
+           , GL.Vector2 (-1.0) (-1.0)
+           ]
+
+makeWindow :: MonadIO m => m ()
+makeWindow = liftIO $ do
   GLFW.initialize
   GLFW.openWindowHint GLFW.OpenGLVersionMajor 3
   GLFW.openWindowHint GLFW.OpenGLVersionMinor 3
@@ -33,58 +42,57 @@ keyCallback :: GLFW.Key -> GLFW.KeyButtonState -> IO ()
 keyCallback (GLFW.SpecialKey GLFW.ESC) GLFW.Press = exitSuccess
 keyCallback _ _ = pure ()
 
-initOGL :: FilePath -> IO RenderState
-initOGL shaderDir = do
+initOGL :: MonadIO m => m ()
+initOGL = do
   GL.debugOutput $= GL.Enabled
   GL.polygonMode $= (GL.Fill, GL.Fill)
   GL.cullFace $= Nothing
   GL.depthFunc $= Just GL.Less
-
-  vao <- GL.genObjectName
-  GL.bindVertexArrayObject $= Just vao
   GL.clampColor GL.ClampVertexColor $= GL.ClampOff
   GL.clampColor GL.ClampFragmentColor $= GL.ClampOff
   GL.clampColor GL.ClampReadColor $= GL.ClampOff
   GL.clearColor $= GL.Color4 0.0 0.0 0.0 0.0
 
-  shaderProg <- makeShaderProgram shaderDir
+initRenderState :: MonadIO m => FilePath -> m RenderState
+initRenderState shaderDir = do
+  shaderProg <- compileShaders shaderDir >>= \case
+    Just sp -> pure sp
+    Nothing -> error "Shader compilation failed"
+
   windowSize@(GL.Size width height) <- GL.get GLFW.windowSize
 
-  vao <- makeVAO $ do
-      let pos = GL.VertexArrayDescriptor 2 GL.Float (fromIntegral $ sizeOf (undefined :: GL.Vector2 Float)) offset0
+  vao <- liftIO $ makeVAO $ do
+      let pos = GL.VertexArrayDescriptor 2 GL.Float
+            (fromIntegral $ sizeOf (undefined :: GL.Vector2 Float)) offset0
           posAttribute  = getAttrib shaderProg "pos"
-      vbo <- makeBuffer GL.ArrayBuffer vertices
+      vbo <- makeBuffer GL.ArrayBuffer screenRect
       GL.vertexAttribArray posAttribute $= GL.Enabled
       GL.vertexAttribPointer posAttribute $= (GL.ToFloat, pos)
+  GL.bindVertexArrayObject $= Just vao
 
-  texture <- readTexture (shaderDir ++ "/image.png") >>= \case
+  texture0 <- liftIO $ readTexture (shaderDir ++ "/image.png") >>= \case
     Left e -> error $ "Failed to load texture: " ++ e
     Right t -> pure t
 
-  buffer0 <- liftIO $ freshTextureFloat (fromIntegral width) (fromIntegral height) TexRGBA
+  buffer0 <- liftIO $ freshTextureFloat
+    (fromIntegral width) (fromIntegral height) TexRGBA
   fbo <- GL.genObjectName
 
-  -- Clear buffer0 texture
-  GL.bindFramebuffer GL.Framebuffer $= fbo
+  currentTime <- liftIO getCurrentTime
+  pure (RenderState shaderProg vao False shaderDir
+        windowSize currentTime texture0 buffer0 fbo)
+
+clearBuffer0 :: (MonadGet RenderState m, MonadIO m) => m ()
+clearBuffer0 = do
+  rs <- get
+  GL.bindFramebuffer GL.Framebuffer $= (rs^.buffer0fbo)
   GL.activeTexture $= GL.TextureUnit 1
-  GL.textureBinding GL.Texture2D $= Just buffer0
+  GL.textureBinding GL.Texture2D $= Just (rs^.buffer0)
   GL.textureFilter GL.Texture2D $= ((GL.Nearest, Nothing), GL.Nearest)
   texture2DWrap $= (GL.Repeated, GL.Repeat)
-  liftIO $ GL.framebufferTexture2D GL.Framebuffer (GL.ColorAttachment 0) GL.Texture2D buffer0 0
+  liftIO $ GL.framebufferTexture2D GL.Framebuffer
+    (GL.ColorAttachment 0) GL.Texture2D (rs^.buffer0) 0
   liftIO $ GL.clear [GL.ColorBuffer]
-
-  currentTime <- getCurrentTime
-  pure (RenderState shaderProg vao False shaderDir windowSize currentTime texture buffer0 fbo)
-
-
-vertices :: [GL.Vector2 Float]
-vertices = [ GL.Vector2 (-1.0) (-1.0)
-           , GL.Vector2 1.0 (-1.0)
-           , GL.Vector2 1.0 1.0
-           , GL.Vector2 1.0 1.0
-           , GL.Vector2 (-1.0) 1.0
-           , GL.Vector2 (-1.0) (-1.0)
-           ]
 
 makeShaderProgram :: FilePath -> IO ShaderProgram
 makeShaderProgram shaderDir = loadShaderProgram
@@ -95,16 +103,22 @@ makeShaderProgram shaderDir = loadShaderProgram
 recompileIfDirty :: (MonadState RenderState m, MonadIO m) => m ()
 recompileIfDirty = do
   rs <- get
-  when (rs ^. dirty) $ do
-    liftIO (putStr "\nRecompiling shaders...")
-    liftIO (try (makeShaderProgram (rs ^. shaderDir))) >>= \case
-      Right sp -> do
-        modify (set shaderProg sp . set dirty False)
-        liftIO (putStrLn " Recompiled")
-      Left e -> do
-        modify (set dirty False)
-        liftIO (print (e :: IOException))
-        liftIO (putStrLn " Shader compilation failed")
+  when (rs^.dirty) $ do
+    (compileShaders (rs^.shaderDir))
+    modify (set dirty False)
+
+compileShaders :: MonadIO m => FilePath -> m (Maybe ShaderProgram)
+compileShaders shaderDir = do
+  liftIO (try (makeShaderProgram shaderDir)) >>= \case
+    Right sp -> do
+      GL.currentProgram $= Just (program sp)
+      liftIO (putStrLn " Recompiled")
+      pure (Just sp)
+    Left e -> do
+      liftIO (print (e :: IOException))
+      liftIO (putStrLn " Shader compilation failed")
+      pure Nothing
+
 
 uniformExists :: GL.UniformLocation -> Bool
 uniformExists (GL.UniformLocation (-1)) = False
@@ -139,11 +153,7 @@ renderFrame iTime t = do
   let tPrev = rs^.lastRenderTime
       dt = realToFrac (diffUTCTime t tPrev) :: Float
       fps = 1.0 / dt
-  liftIO (putStr ("FPS: " ++ show fps ++ "\t"))
   modify (set lastRenderTime t)
-
-  GL.currentProgram $= Just (program (rs ^. shaderProg))
-  GL.bindVertexArrayObject $= Just (rs ^. vao)
 
   -- Set uniforms
   safeSetUniform "iTime" iTime
@@ -151,22 +161,23 @@ renderFrame iTime t = do
   let (GL.Size width height) = rs^.windowSize
   safeSetUniform "iResolution"
     (GL.Vector2 (fromIntegral width) (fromIntegral height) :: GL.Vector2 Float)
-  liftIO (putStr ("Window size: " ++ show width ++ "*" ++ show height ++ "\r"))
   (GL.Position mouseX mouseY) <- GL.get GLFW.mousePos
-  safeSetUniform "iMousePos"
-    (GL.Vector2 (fromIntegral mouseX) (fromIntegral (height - mouseY)) :: GL.Vector2 Float)
-
+  safeSetUniform "iMousePos" (GL.Vector2 @Float (fromIntegral mouseX)
+                              (fromIntegral (height - mouseY)))
   bindTexture (rs^.texture0) "texture0" (GL.TextureUnit 0)
   bindTexture (rs^.buffer0) "buffer0" (GL.TextureUnit 1)
 
   -- Render to buffer 0
   GL.bindFramebuffer GL.Framebuffer $= (rs^.buffer0fbo)
   safeSetUniform "isBuffer" (0 :: Float)
-  liftIO $ GL.drawArrays GL.Triangles 0 (fromIntegral (length vertices))
+  liftIO $ GL.drawArrays GL.Triangles 0 (fromIntegral (length screenRect))
 
   -- Render to screen
   GL.bindFramebuffer GL.Framebuffer $= GL.defaultFramebufferObject
   safeSetUniform "isBuffer" (1 :: Float)
   liftIO $ GL.clear [GL.ColorBuffer, GL.DepthBuffer]
-  liftIO $ GL.drawArrays GL.Triangles 0 (fromIntegral (length vertices))
+  liftIO $ GL.drawArrays GL.Triangles 0 (fromIntegral (length screenRect))
   liftIO $ GLFW.swapBuffers
+
+  liftIO $ putStr $ "FPS: " ++ show fps ++ "\t"
+    ++ "Window size: " ++ show width ++ "*" ++ show height ++ "\r"
