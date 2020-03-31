@@ -26,7 +26,8 @@ liveshader shaderDir = do
 
   t0 <- liftIO (getCurrentTime)
   void $ runSTMStateT s $ do
-    clearBuffer0
+    rs <- get
+    mapM_ clearBuffer (rs^.buffers)
     forever $ do
       (iTime, t) <- elapsedTime t0
       renderFrame iTime t
