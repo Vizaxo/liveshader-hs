@@ -84,21 +84,28 @@ initRenderState shaderDir = do
 
 genRenderBuffer :: MonadIO m => GL.Size -> m RenderBuffer
 genRenderBuffer (GL.Size width height) = do
-  texture <- liftIO $ freshTextureFloat
+  texture0 <- liftIO $ freshTextureFloat
+    (fromIntegral width) (fromIntegral height) TexRGBA
+  texture1 <- liftIO $ freshTextureFloat
     (fromIntegral width) (fromIntegral height) TexRGBA
   fbo <- GL.genObjectName
-  pure (RenderBuffer texture fbo)
+  pure (RenderBuffer texture0 texture1 A fbo)
 
 
 clearBuffer :: MonadIO m => RenderBuffer -> m ()
 clearBuffer b = do
   GL.bindFramebuffer GL.Framebuffer $= (b^.fbo)
   GL.activeTexture $= GL.TextureUnit 0
-  GL.textureBinding GL.Texture2D $= Just (b^.texture)
   GL.textureFilter GL.Texture2D $= ((GL.Nearest, Nothing), GL.Nearest)
   texture2DWrap $= (GL.Repeated, GL.Repeat)
+  GL.textureBinding GL.Texture2D $= Just (b^.textureA)
   liftIO $ GL.framebufferTexture2D GL.Framebuffer
-    (GL.ColorAttachment 0) GL.Texture2D (b^.texture) 0
+    (GL.ColorAttachment 0) GL.Texture2D (b^.textureA) 0
+  liftIO $ GL.clear [GL.ColorBuffer]
+
+  GL.textureBinding GL.Texture2D $= Just (b^.textureB)
+  liftIO $ GL.framebufferTexture2D GL.Framebuffer
+    (GL.ColorAttachment 0) GL.Texture2D (b^.textureB) 0
   liftIO $ GL.clear [GL.ColorBuffer]
 
 makeShaderProgram :: FilePath -> IO ShaderProgram
@@ -148,11 +155,22 @@ bindTexture texture uniformName textureUnit = do
   texture2DWrap $= (GL.Repeated, GL.Repeat)
   safeSetUniform uniformName textureUnit
 
-renderToBuffer :: (MonadGet RenderState m, MonadIO m) => RenderBuffer -> Integer -> m ()
+renderToBuffer :: (MonadGet RenderState m, MonadIO m)
+  => RenderBuffer -> Integer -> m RenderBuffer
 renderToBuffer b id = do
+  let t = getPreviousTexture b
   GL.bindFramebuffer GL.Framebuffer $= (b^.fbo)
+  GL.activeTexture $= GL.TextureUnit 0
+  GL.textureFilter GL.Texture2D $= ((GL.Nearest, Nothing), GL.Nearest)
+  GL.textureBinding GL.Texture2D $= Just t
+  liftIO $ GL.framebufferTexture2D GL.Framebuffer
+    (GL.ColorAttachment 0) GL.Texture2D t 0
+
+  texture2DWrap $= (GL.Repeated, GL.Repeat)
   safeSetUniform "bufferId" (fromInteger id :: GL.GLint)
   liftIO $ GL.drawArrays GL.Triangles 0 (fromIntegral (length screenRect))
+
+  pure (over lastWritten swapLastWritten b)
 
 renderToScreen :: (MonadGet RenderState m, MonadIO m) => Float -> m ()
 renderToScreen id = do
@@ -161,6 +179,12 @@ renderToScreen id = do
   liftIO $ GL.clear [GL.ColorBuffer, GL.DepthBuffer]
   liftIO $ GL.drawArrays GL.Triangles 0 (fromIntegral (length screenRect))
   liftIO $ GLFW.swapBuffers
+
+bindBufferTexture :: (MonadGet RenderState m, MonadIO m)
+  => RenderBuffer -> Integer -> m ()
+bindBufferTexture b id =
+  let t = getLastWrittenTexture b
+  in bindTexture t ("buffer" ++ show id) (GL.TextureUnit (1+fromInteger id))
 
 renderFrame :: (MonadState RenderState m, MonadIO m) => Float -> UTCTime -> m ()
 renderFrame iTime t = do
@@ -188,10 +212,10 @@ renderFrame iTime t = do
   bindTexture (rs^.texture0) "texture0" (GL.TextureUnit 0)
 
   let numberedBuffers = zip (rs^.buffers) [0..]
-  forM_ numberedBuffers $ \(b, id) -> do
-    bindTexture (b^.texture) ("buffer" ++ show id) (GL.TextureUnit (1+fromInteger id))
+  mapM_ (uncurry bindBufferTexture) numberedBuffers
+  bs' <- traverse (uncurry renderToBuffer) numberedBuffers
+  modify (set buffers bs')
 
-  mapM_ (uncurry renderToBuffer) numberedBuffers
   renderToScreen (-1)
 
   liftIO $ putStr $ "FPS: " ++ show fps ++ "fps \t"

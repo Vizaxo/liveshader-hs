@@ -5,11 +5,29 @@ import Data.Time.Clock
 import qualified Graphics.Rendering.OpenGL as GL
 import Graphics.GLUtil
 
+data LastWrittenTexture = A | B
+
 data RenderBuffer = RenderBuffer
-  { _texture :: GL.TextureObject
+  { _textureA :: GL.TextureObject
+  , _textureB :: GL.TextureObject
+  , _lastWritten :: LastWrittenTexture
   , _fbo :: GL.FramebufferObject
   }
 makeLenses ''RenderBuffer
+
+getLastWrittenTexture :: RenderBuffer -> GL.TextureObject
+getLastWrittenTexture b = case b^.lastWritten of
+  A -> b^.textureA
+  B -> b^.textureB
+
+getPreviousTexture :: RenderBuffer -> GL.TextureObject
+getPreviousTexture b = case b^.lastWritten of
+  A -> b^.textureB
+  B -> b^.textureA
+
+swapLastWritten :: LastWrittenTexture -> LastWrittenTexture
+swapLastWritten A = B
+swapLastWritten B = A
 
 data RenderState = RenderState
   { _shaderProg :: ShaderProgram

@@ -15,12 +15,13 @@ out vec4 fragColor;
 
 void main(void) {
         if (bufferId == 0) {
-                fragColor = texture(texture0, gl_FragCoord.xy / iResolution);
-        } else if (bufferId == 1) {
                 fragColor = texture(buffer1, gl_FragCoord.xy / iResolution);
+        } else if (bufferId == 1) {
+                vec4 c = texture(buffer1, gl_FragCoord.xy / iResolution);
+                fragColor = vec4(100.0,0,0,0);
         } else {
-                fragColor = mix(texture(buffer1, gl_FragCoord.xy / iResolution) / 2.0,
-                                texture(buffer0, gl_FragCoord.xy / iResolution) / 2.0,
-                                sin(iTime)*0.5+0.5);
+                fragColor = mix(texture(buffer0, gl_FragCoord.xy / iResolution),
+                                texture(buffer1, gl_FragCoord.xy / iResolution) / 10.0,
+                                0);
         }
 }
