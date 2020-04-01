@@ -5,6 +5,7 @@ import Control.Lens
 import Control.Monad
 import Control.Monad.Trans
 import Data.Time.Clock
+import Foreign.Ptr
 import Foreign.Storable
 import Graphics.GLUtil
 import Graphics.Rendering.OpenGL (($=))
@@ -48,9 +49,6 @@ initOGL = do
   GL.polygonMode $= (GL.Fill, GL.Fill)
   GL.cullFace $= Nothing
   GL.depthFunc $= Just GL.Less
-  GL.clampColor GL.ClampVertexColor $= GL.ClampOff
-  GL.clampColor GL.ClampFragmentColor $= GL.ClampOff
-  GL.clampColor GL.ClampReadColor $= GL.ClampOff
   GL.clearColor $= GL.Color4 0.0 0.0 0.0 0.0
 
 initRenderState :: MonadIO m => FilePath -> m RenderState
@@ -82,12 +80,19 @@ initRenderState shaderDir = do
         windowSize currentTime texture0
         [buffer0, buffer1])
 
+genTextureFloat :: MonadIO m => GL.GLint -> GL.GLint -> m GL.TextureObject
+genTextureFloat width height = do
+  t <- liftIO GL.genObjectName
+  GL.textureBinding GL.Texture2D $= Just t
+  liftIO $ GL.texImage2D GL.Texture2D GL.NoProxy
+    0 GL.RGBA32F (GL.TextureSize2D width height)
+    0 (GL.PixelData GL.RGBA GL.Float (nullPtr :: Ptr Float))
+  pure t
+
 genRenderBuffer :: MonadIO m => GL.Size -> m RenderBuffer
 genRenderBuffer (GL.Size width height) = do
-  texture0 <- liftIO $ freshTextureFloat
-    (fromIntegral width) (fromIntegral height) TexRGBA
-  texture1 <- liftIO $ freshTextureFloat
-    (fromIntegral width) (fromIntegral height) TexRGBA
+  texture0 <- genTextureFloat width height
+  texture1 <- genTextureFloat width height
   fbo <- GL.genObjectName
   pure (RenderBuffer texture0 texture1 A fbo)
 

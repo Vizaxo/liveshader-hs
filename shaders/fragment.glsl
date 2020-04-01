@@ -18,10 +18,8 @@ void main(void) {
                 fragColor = texture(buffer1, gl_FragCoord.xy / iResolution);
         } else if (bufferId == 1) {
                 vec4 c = texture(buffer1, gl_FragCoord.xy / iResolution);
-                fragColor = vec4(100.0,0,0,0);
+                fragColor = vec4(0.01,0,0,0) + c;
         } else {
-                fragColor = mix(texture(buffer0, gl_FragCoord.xy / iResolution),
-                                texture(buffer1, gl_FragCoord.xy / iResolution) / 10.0,
-                                0);
+                fragColor = texture(buffer1, gl_FragCoord.xy / iResolution) / 10.0;
         }
 }
