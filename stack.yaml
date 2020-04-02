@@ -71,7 +71,6 @@ extra-deps:
 # compiler-check: newer-minor
 
 nix:
-  enable: true
   packages: [ freeglut mesa libGLU x11 xorg.libXext xorg.libXxf86vm xorg.libX11 libGL zlib ]
 
 ghc-options:
